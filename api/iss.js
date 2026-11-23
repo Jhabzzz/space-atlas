@@ -4,8 +4,8 @@ async function tle(){ const r=await fetch('https://celestrak.org/NORAD/elements/
 async function crew(){ const r=await fetch('https://ll.thespacedevs.com/2.3.0/space_stations/4/?mode=detailed',{headers:{'User-Agent':'space-atlas (vercel)'}}); if(!r.ok) throw new Error('ll2 '+r.status);
   const j=await r.json(); const people=[]; const names=new Set();
   // The station record lists active expeditions without crew; each expedition record has the crew.
-  const ex=await Promise.all((j.active_expeditions||[]).map(async e=>{ if(e.crew||!e.url) return e;
-    const x=await fetch(e.url,{headers:{'User-Agent':'space-atlas (vercel)'}}); if(!x.ok) throw new Error('ll2 expedition '+x.status); return x.json(); }));
+  const ex=await Promise.all((j.active_expeditions||[]).map(async e=>{ if(e.crew||e.id==null) return e;
+    const x=await fetch(`https://ll.thespacedevs.com/2.3.0/expeditions/${e.id}/`,{headers:{'User-Agent':'space-atlas (vercel)'}}); if(!x.ok) throw new Error('ll2 expedition '+x.status); return x.json(); }));
   ex.forEach(e=>(e.crew||[]).forEach(c=>{ const n=c.astronaut?.name; if(!n||names.has(n)) return; names.add(n);
     people.push({name:n, agency:c.astronaut?.agency?.abbrev||c.astronaut?.agency?.name||'', role:c.role?.role||''}); }));
   return { expedition: ex.map(e=>e.name).join(', '), people }; }
@@ -14,5 +14,5 @@ export default async function handler(req,res){
   res.setHeader('Cache-Control','public, s-maxage=3600, stale-while-revalidate=7200');
   res.status(t.status==='fulfilled'||c.status==='fulfilled'?200:502).json({ fetchedAt:new Date().toISOString(),
     tle: t.status==='fulfilled'? t.value : null, tleError: t.status==='rejected'? String(t.reason) : undefined,
-    crew: c.status==='fulfilled' && c.value.people.length? c.value : null, crewError: c.status==='rejected'? String(c.reason) : undefined });
+    crew: c.status==='fulfilled' && c.value.people.length? c.value : null, crewError: c.status==='rejected'? String(c.reason)+(c.reason?.cause?' ('+String(c.reason.cause)+')':'') : undefined });
 }
