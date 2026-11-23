@@ -2,7 +2,10 @@
 async function tle(){ const r=await fetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle'); if(!r.ok) throw new Error('celestrak '+r.status);
   const lines=(await r.text()).trim().split(/\r?\n/).map(s=>s.trim()); const l1=lines.find(s=>s.startsWith('1 ')), l2=lines.find(s=>s.startsWith('2 ')); if(!l1||!l2) throw new Error('no TLE'); return [l1,l2]; }
 async function crew(){ const r=await fetch('https://ll.thespacedevs.com/2.3.0/space_stations/4/?mode=detailed',{headers:{'User-Agent':'space-atlas (vercel)'}}); if(!r.ok) throw new Error('ll2 '+r.status);
-  const j=await r.json(); const ex=(j.active_expeditions||[]); const people=[]; const names=new Set();
+  const j=await r.json(); const people=[]; const names=new Set();
+  // The station record lists active expeditions without crew; each expedition record has the crew.
+  const ex=await Promise.all((j.active_expeditions||[]).map(async e=>{ if(e.crew||!e.url) return e;
+    const x=await fetch(e.url,{headers:{'User-Agent':'space-atlas (vercel)'}}); if(!x.ok) throw new Error('ll2 expedition '+x.status); return x.json(); }));
   ex.forEach(e=>(e.crew||[]).forEach(c=>{ const n=c.astronaut?.name; if(!n||names.has(n)) return; names.add(n);
     people.push({name:n, agency:c.astronaut?.agency?.abbrev||c.astronaut?.agency?.name||'', role:c.role?.role||''}); }));
   return { expedition: ex.map(e=>e.name).join(', '), people }; }
