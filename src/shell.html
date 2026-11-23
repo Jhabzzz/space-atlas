@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Space Atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=B612:ital,wght@0,400;0,700;1,400&family=B612+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* Mission-console look: grey-green panel paint, ink text, indicator lamps.
+   Scene backgrounds are chart navy, not black. One display family (B612, Airbus cockpit face);
+   B612 Mono only for live numeric readouts. */
+:root{
+  --sky:#0f2238; --console:#c4c8bf; --console-hi:#d3d6ce; --console-lo:#aeb2a8; --groove:#8e9389;
+  --ink:#16191c; --ink-2:#4b5149; --ink-3:#6c7268;
+  --amber:#f2a516; --amber-dim:#7a5a1c; --go:#2f9a5e; --go-dim:#2c4a37; --red:#cf3b2d; --red-dim:#5a2a25; --blue:#3f7fd1;
+  --scene-text:#e7edf3;
+  --font:'B612',Verdana,sans-serif; --num:'B612 Mono',Menlo,monospace;
+  --hover:#dde0d8; --field:#eef0ea; --chip:#e6e8e1; --sel:#e2e5dc; --go-hover:#2a2f33;
+}
+/* Dark theme: the same console with the cabin lights down */
+:root[data-theme="dark"]{
+  --sky:#08111d; --console:#23272b; --console-hi:#2e3338; --console-lo:#1a1d21; --groove:#0b0d0f;
+  --ink:#e2e5de; --ink-2:#a2a99f; --ink-3:#7b8278;
+  --hover:#353b41; --field:#161a1d; --chip:#1c2024; --sel:#30363c; --go-hover:#ffffff;
+}
+:root[data-theme="dark"] .lamp::before{border-color:rgba(255,255,255,.25)}
+:root[data-theme="dark"] button.go{color:#16191c}
+#themeBtn{align-self:center;margin:0 12px 0 0;white-space:nowrap}
+#themeBtn svg,#introTheme svg{vertical-align:-2px;margin-right:6px}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overscroll-behavior:none;background:var(--sky);color:var(--ink);font-family:var(--font);font-size:13px;line-height:1.45;overflow:hidden;-webkit-font-smoothing:antialiased}
+body{position:fixed;inset:0}
+canvas#gl{position:fixed;inset:0;display:block}
+.mono,.num{font-family:var(--num);font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ---------- console panels: docked to the screen edges ---------- */
+.panel{background:var(--console);color:var(--ink);border:1px solid var(--groove);box-shadow:inset 1px 1px 0 var(--console-hi),inset -1px -1px 0 var(--console-lo)}
+.sec{padding:12px 14px;border-bottom:2px groove var(--console-hi)}
+.sec:last-child{border-bottom:none}
+.lbl{font-size:11px;color:var(--ink-2)}
+h2{font-size:19px;font-weight:700;line-height:1.2}
+h3{font-size:15px;font-weight:700;line-height:1.25}
+p.note{font-size:11px;color:var(--ink-3);margin-top:6px}
+.scroll{overflow-y:auto}.scroll::-webkit-scrollbar{width:8px}.scroll::-webkit-scrollbar-track{background:var(--console-lo)}.scroll::-webkit-scrollbar-thumb{background:var(--groove)}
+
+/* push buttons */
+button{font:inherit;font-size:12px;color:var(--ink);cursor:pointer;padding:6px 11px;border-radius:2px;
+  background:var(--console-hi);border:1px solid var(--groove);border-bottom-width:3px;transition:transform .06s}
+button:hover{background:var(--hover)}
+button:active{transform:translateY(1px);border-bottom-width:2px}
+button.on{background:var(--console-lo);border-bottom-width:1px;box-shadow:inset 0 2px 3px rgba(0,0,0,.2)}
+button.on::before{content:'';display:inline-block;width:7px;height:7px;margin-right:6px;background:var(--amber);box-shadow:0 0 6px var(--amber);vertical-align:1px}
+button.go{background:var(--ink);color:var(--console-hi);border-color:#000}
+button.go:hover{background:var(--go-hover)}
+input.search{width:100%;font:inherit;font-size:13px;padding:7px 9px;background:var(--field);border:1px solid var(--groove);border-radius:2px;color:var(--ink);box-shadow:inset 0 1px 2px rgba(0,0,0,.15)}
+
+/* lamps (status indicators) */
+.lamp{display:inline-flex;align-items:center;gap:6px;font-size:11px;white-space:nowrap;color:var(--ink-2)}
+.lamp::before{content:'';width:10px;height:10px;border:1px solid rgba(0,0,0,.45);background:#7d8178;flex-shrink:0}
+.lamp.go::before{background:var(--go);box-shadow:0 0 5px var(--go)}
+.lamp.amber::before{background:var(--amber);box-shadow:0 0 5px var(--amber)}
+.lamp.red::before{background:var(--red);box-shadow:0 0 5px var(--red)}
+.lamp.blue::before{background:var(--blue);box-shadow:0 0 5px var(--blue)}
+.lamp.violet::before{background:#9a6fd0}
+.lamp.live::before{background:var(--red);box-shadow:0 0 6px var(--red);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.25}}
+.cc{display:inline-block;font-family:var(--num);font-size:10px;padding:0 3px;border:1px solid var(--groove);background:var(--chip);color:var(--ink-2);margin-right:4px;vertical-align:1px}
+
+/* ---------- top console bar ---------- */
+#top{position:fixed;top:0;left:0;right:0;height:54px;z-index:20;display:flex;align-items:stretch;gap:16px;padding:0 0 0 16px;background:var(--console);border-bottom:2px solid var(--groove)}
+.brand{cursor:pointer;display:flex;align-items:center;font-weight:700;font-size:15px;letter-spacing:.01em;white-space:nowrap;padding-right:16px;border-right:2px groove var(--console-hi)}
+.brand svg{margin-right:8px}
+#tabs{display:flex;align-items:stretch;flex:1}
+#tabs button{border:none;border-right:1px solid var(--groove);border-radius:0;background:transparent;padding:0 16px;font-size:12.5px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:5px;min-width:94px}
+#tabs button::before{content:'';width:24px;height:5px;background:#8a8e85;border:1px solid rgba(0,0,0,.3)}
+#tabs button:hover{background:var(--console-hi)}
+#tabs button.act{background:var(--console-lo);box-shadow:inset 0 2px 4px rgba(0,0,0,.18)}
+#tabs button.act::before{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+#tabs button.on::before{margin:0}
+.src{display:flex;align-items:center;padding:0 16px;border-left:2px groove var(--console-hi);font-size:11.5px;color:var(--ink-2)}
+.view{display:none}.view.act{display:block}
+
+/* ---------- scene labels (over 3D) ---------- */
+#labels{position:fixed;inset:0;pointer-events:none;z-index:4;overflow:hidden}
+.tag{position:absolute;transform:translate(-50%,-140%);font-size:11px;white-space:nowrap;color:var(--scene-text);text-shadow:0 0 3px #0a1626,0 0 3px #0a1626,0 1px 2px #000;pointer-events:auto;cursor:pointer}
+.tag.small{font-size:10.5px;color:#c4d2e2}
+.tag.big{font-size:13px;font-weight:700}
+.tag.iss{font-size:13px;font-weight:700;color:#fff;background:var(--red);text-shadow:none;padding:2px 6px;transform:translate(10px,-50%)}
+.tag.part{transform:translate(12px,-50%);pointer-events:none;display:flex;align-items:center;gap:6px;font-size:11.5px}
+.tag.part::before{content:'';width:30px;height:1px;background:#f2a516}
+
+/* ---------- shared docked layout ---------- */
+.left{position:fixed;top:54px;left:0;bottom:0;width:270px;z-index:6;display:flex;flex-direction:column;border-top:none;border-left:none}
+.right{position:fixed;top:54px;right:0;bottom:0;width:360px;z-index:6;display:flex;flex-direction:column;border-top:none;border-right:none}
+.drawer{position:fixed;left:270px;right:360px;bottom:0;z-index:7;display:none;border-bottom:none;padding:14px 18px 16px;max-height:44vh}
+.drawer .x{position:absolute;top:8px;right:10px;padding:2px 8px}
+.drawer .meta{font-size:12px;color:var(--ink-2);margin-top:3px}
+.drawer .desc{font-size:13px;margin-top:8px;max-width:72ch}
+.drawer .acts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.readout{font-family:var(--num);font-size:30px;line-height:1.1;background:#1b211c;color:#9ff0b0;padding:8px 10px;margin-top:6px;border:1px solid #000;box-shadow:inset 0 0 12px rgba(0,0,0,.7);text-shadow:0 0 6px rgba(130,255,160,.45);white-space:nowrap;overflow:hidden}
+.readout.small{font-size:16px}
+.readout.amber{color:#ffc35a;text-shadow:0 0 6px rgba(255,180,60,.5)}
+table.kv{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+table.kv td{padding:5px 0;border-bottom:1px solid var(--console-lo);vertical-align:top}
+table.kv td:first-child{color:var(--ink-2);width:44%;padding-right:8px}
+.rows .row{display:flex;gap:10px;padding:8px 14px;cursor:pointer;border-bottom:1px solid var(--console-lo);align-items:flex-start}
+.rows .row:hover{background:var(--console-hi)}
+.rows .row.sel{background:var(--sel);box-shadow:inset 4px 0 0 var(--amber)}
+.rows h4{font-size:11px;font-weight:700;color:var(--ink-2);padding:12px 14px 4px}
+.row .main{flex:1;min-width:0}
+.row .t1{font-size:11px;color:var(--ink-2)}
+.row .t2{font-size:13.5px;font-weight:700;line-height:1.25}
+.row .t3{font-size:11.5px;color:var(--ink-2);margin-top:2px}
+.row .cd{font-family:var(--num);font-size:12px;color:var(--ink);margin-top:3px}
+#tip{position:fixed;pointer-events:none;z-index:30;background:var(--console);border:1px solid var(--groove);padding:5px 8px;font-size:12px;display:none;max-width:260px}
+
+/* ---------- launches ---------- */
+#eSeg{display:flex;gap:0;margin-bottom:10px}
+#eSeg button{flex:1;border-radius:0;margin-right:-1px;padding:6px 4px}
+.statgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px 10px;margin-top:8px}
+.statgrid .v{font-family:var(--num);font-size:16px;font-weight:700}
+.statgrid .k{font-size:11.5px;line-height:1.3}
+.statgrid .s{font-size:10px;color:var(--ink-3);line-height:1.3;margin-top:1px}
+.switches{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.switches button{text-align:left}
+
+/* ---------- launch sim ---------- */
+#lHud .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+#lHud .grid .readout{font-size:15px;padding:5px 7px;margin-top:2px}
+#lStage{margin-top:10px}
+.bar{height:6px;background:var(--console-lo);margin-top:10px;border:1px solid var(--groove)}.bar i{display:block;height:100%;background:var(--amber);width:0}
+#lNow{font-size:13px;margin-top:6px;min-height:76px}
+#lNow b{font-weight:700}
+#lProf{width:100%;height:110px;display:block;margin-top:6px;background:#1b211c;border:1px solid #000}
+#lLog .ev{display:flex;gap:10px;font-size:12px;padding:4px 14px;color:var(--ink-3)}
+#lLog .ev.done{color:var(--ink)}
+#lLog .ev .tm{width:64px;flex-shrink:0;font-family:var(--num);font-size:11px}
+#lLog .ev.done .tm{color:var(--ink);font-weight:700}
+#lCtl{position:fixed;left:270px;right:360px;bottom:0;z-index:7;padding:8px 10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center;border-bottom:none}
+#lCtl .sep{width:2px;height:24px;border-left:2px groove var(--console-hi);margin:0 4px}
+#lBig{position:fixed;left:calc(50% - 45px);top:24%;transform:translate(-50%,-50%);z-index:8;font-size:56px;font-weight:700;color:#fff;text-shadow:0 2px 24px rgba(0,0,0,.6);pointer-events:none;opacity:0;transition:opacity .4s}
+#lToast{position:fixed;left:calc(50% - 45px);top:70px;transform:translateX(-50%);z-index:8;padding:6px 14px;font-size:13px;opacity:0;transition:opacity .4s;pointer-events:none}
+
+/* ---------- vehicle systems + cockpit ---------- */
+.sysgrid{display:grid;grid-template-columns:92px 1fr;gap:10px;margin-top:8px;align-items:start}
+.sublbl{font-size:10.5px;color:var(--ink-2);margin:2px 0}
+svg.eng{width:100%;display:block;background:#0e1215;border:1px solid #000}
+svg.eng .ring{fill:none;stroke:#3a4148;stroke-width:.04}
+svg.eng .e{fill:#262c31;stroke:#4a525a;stroke-width:.02;transition:fill .15s}
+svg.eng .e.on{fill:#ffb347;stroke:#fff0c8;filter:drop-shadow(0 0 .06px #ff8a1a)}
+.pbar{display:grid;grid-template-columns:52px 1fr 34px;gap:5px;align-items:center;font-size:10.5px;margin-top:3px}
+.pbar span{color:var(--ink-2)}.pbar>div{height:8px;background:#0e1215;border:1px solid #000}.pbar i{display:block;height:100%;background:#57c6e8;transition:width .2s}
+.pbar:nth-child(even) i{background:#e8b257}.pbar i.low{background:#cf3b2d}.pbar b{font-size:10.5px;text-align:right}
+#lFlash{position:fixed;inset:0;z-index:5;background:#fff;opacity:0;pointer-events:none;transition:opacity .6s}
+#cockpit{position:fixed;left:270px;right:360px;top:54px;bottom:92px;z-index:5;display:none;overflow:hidden;pointer-events:none;color:#d6e4d9;font-size:11px}
+#cockpit.on{display:block}
+#cockpit .win{position:absolute;left:5%;right:5%;top:4%;height:52%;border-radius:60px 60px 22px 22px;box-shadow:0 0 0 2400px #121518, inset 0 0 40px rgba(0,0,0,.55);border:4px solid #2b3137}
+#cockpit .strut{position:absolute;top:0;bottom:0;width:10px;margin-left:-5px;background:linear-gradient(90deg,#0c0e10,#2b3137,#0c0e10)}
+#cockpit .hud{position:absolute;left:0;right:0;top:12px;display:flex;justify-content:center;gap:28px;font-family:var(--num);font-size:12px;color:#9ff0b0;text-shadow:0 0 6px rgba(130,255,160,.6)}
+#cockpit .hud b{font-weight:700}
+#cockpit .dash{position:absolute;left:2%;right:2%;bottom:2%;top:58%;display:grid;grid-template-columns:1.25fr 1fr 1fr 1fr;gap:8px;z-index:1}
+#cockpit .scr{background:#0b0e10;border:2px solid #2b3137;border-radius:6px;padding:8px 9px;box-shadow:inset 0 0 14px rgba(0,0,0,.8);overflow:hidden}
+#cockpit .sh{font-family:var(--num);font-size:9.5px;color:#7fa08a;letter-spacing:.04em}
+#cockpit .sh2{font-family:var(--num);font-size:9.5px;color:#9ff0b0;margin-top:4px}
+#cockpit .dim{color:#7f8f84;font-size:10px}
+#cockpit .cv{font-size:11.5px;color:#e8f2ea;margin-top:2px}
+#cockpit .adiwrap{display:grid;grid-template-columns:46px 1fr 46px;gap:4px;height:calc(100% - 14px);align-items:center}
+#ckAdi svg{width:100%;height:100%;max-height:150px}
+#ckAdi .ladder line{stroke:#fff;stroke-width:1}#ckAdi .ladder text{fill:#fff;font-size:7px;font-family:var(--num)}
+.tape{height:100%;max-height:150px;background:#121619;border:1px solid #000}.tape svg{width:100%;height:100%}
+.tape line{stroke:#7fa08a;stroke-width:1}.tape text{fill:#9fb8a6;font-size:9px;font-family:var(--num)}
+.tape .box{fill:#000;stroke:#9ff0b0;stroke-width:1}.tape .cur{fill:#9ff0b0;font-size:11px;font-weight:700}
+#ckEng svg.eng{max-height:100px;width:auto;height:calc(100% - 64px);margin:4px auto 0;background:none;border:none}
+#cockpit .thr{display:flex;gap:8px;align-items:flex-end;margin-top:4px;font-family:var(--num)}
+.thrbar,.gbar{width:10px;height:34px;background:#121619;border:1px solid #000;display:flex;align-items:flex-end}.thrbar i,.gbar i{display:block;width:100%;background:#f2a516}
+#cockpit .gm{display:flex;gap:8px;align-items:flex-end;margin-top:4px;font-family:var(--num)}
+#cockpit .pbar span{color:#7fa08a}#cockpit .pbar b{color:#d6e4d9}
+.annGrid{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:4px}
+.ann{font-family:var(--num);font-size:8.5px;text-align:center;padding:3px 2px;background:#1a1e22;color:#56605a;border:1px solid #000}
+.ann.lit{background:#3b2a07;color:#ffc35a}.ann.fresh{background:#f2a516;color:#1a1000;animation:blink .5s steps(2) 6}
+.bars{display:inline-flex;gap:2px;align-items:flex-end}.bars i{width:5px;background:#2f3a33}.bars i.on{background:#9ff0b0}
+@media (max-width:1000px){#cockpit{left:220px;right:300px}}
+@media (max-width:760px){#cockpit{left:0;right:0;bottom:calc(38vh + 50px)}#cockpit .dash{grid-template-columns:1fr 1fr}}
+/* ---------- hangar ---------- */
+#hCtl{position:fixed;left:270px;right:360px;bottom:0;z-index:7;padding:8px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;border-bottom:none}
+.fact{margin-top:12px;font-size:12.5px;padding:10px 12px;background:var(--chip);border-left:4px solid var(--amber)}
+
+/* ---------- satellites ---------- */
+#commSec .switches{margin-top:6px}
+.lat{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;max-width:560px}.lat .readout{font-size:15px;padding:5px 7px}
+#issPanel .readout{font-size:14px;padding:6px 7px}
+#issPanel .statgrid{gap:8px}
+.crew{font-size:12px;margin-top:4px}
+.crew div{padding:2px 0}
+.crew span{color:var(--ink-3)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+
+/* ---------- learn ---------- */
+#learn{position:fixed;inset:54px 0 0 0;z-index:40;background:#000;display:none;align-items:flex-start;justify-content:center;padding:24px}
+#learn .box{width:min(920px,100%);max-height:100%;padding:22px 26px;position:relative;z-index:1}
+#learn .x{position:absolute;top:14px;right:14px}
+#learn .intro{font-size:13.5px;max-width:74ch;margin-top:10px}
+#learn .phys{margin-top:16px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+#learn .phys div{padding:10px 12px;background:var(--chip);border:1px solid var(--groove)}
+#learn .phys b{display:block;font-family:var(--num);font-size:17px}#learn .phys span{font-size:11.5px;color:var(--ink-2)}
+#learn .cols{display:grid;grid-template-columns:1fr 1fr;gap:4px 28px;margin-top:16px}
+#learn dt{font-weight:700;font-size:13px;margin-top:8px}#learn dd{font-size:12.5px;color:var(--ink-2)}
+/* ---------- intro: black hole hero ---------- */
+#intro{position:fixed;inset:0;z-index:60;background:#000;color:#f1eee8;opacity:0;transition:opacity .5s}
+#bhHost{position:absolute;inset:0}
+#intro .relative{position:relative}#intro .absolute{position:absolute}#intro .inset-0{inset:0}#intro .isolate{isolation:isolate}
+#intro .h-full{height:100%}#intro .w-full{width:100%}#intro .overflow-hidden{overflow:hidden}#intro .bg-black{background:#000}
+#intro .copy{position:absolute;z-index:2;left:clamp(24px,7vw,112px);top:50%;transform:translateY(-50%);max-width:34rem}
+#intro h1{font-size:clamp(44px,6.4vw,84px);font-weight:700;line-height:.98;letter-spacing:-.025em}
+#intro .copy p{margin-top:18px;font-size:15.5px;line-height:1.55;color:rgba(241,238,232,.72);max-width:40ch}
+#intro .acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}
+#intro .acts button{font-size:13.5px;padding:10px 16px}
+#intro .acts button.go{background:#f1eee8;color:#111;border-color:#f1eee8}
+#intro .acts button:disabled{opacity:.45;cursor:wait}
+#intro .lamp{margin-top:18px;color:rgba(241,238,232,.6)}
+#intro .cap{position:absolute;z-index:2;right:clamp(16px,3vw,40px);bottom:clamp(16px,3vw,32px);max-width:38ch;font-size:11.5px;line-height:1.5;color:rgba(241,238,232,.5)}
+#learnBg{position:absolute;inset:0;opacity:.45;pointer-events:none}#learnBg>div{height:100%!important}
+@media (max-width:767px){#intro .copy{top:12svh;transform:none;right:24px}#intro .cap{left:16px}}
+
+@media (max-width:1000px){
+  .left{width:220px}.right{width:300px}.drawer,#lCtl,#hCtl{left:220px;right:300px}
+}
+@media (max-width:760px){
+  #top{height:auto;flex-wrap:wrap;padding:0}.brand,.src{display:none}#tabs{overflow-x:auto}#tabs button{min-width:78px;padding:6px 10px}
+  .left{display:none}.right{top:auto;height:38vh;width:100%}.drawer,#lCtl,#hCtl{left:0;right:0;bottom:38vh}
+  #learn .cols,#learn .phys{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+<div id="intro" role="dialog" aria-label="Welcome to Space Atlas">
+  <div id="bhHost"></div>
+  <div class="copy">
+    <h1>Space Atlas</h1>
+    <p>Rocket launches from every pad on Earth, the satellites they leave behind, and where everything else we’ve sent is right now.</p>
+    <div class="acts"><button class="go" id="enterGlobe" disabled>Open the launch globe</button><button id="enterIss" disabled>Track the ISS live</button></div>
+    <span id="introStatus" class="lamp amber">Loading launch data</span>
+    <div><button id="introTheme" style="margin-top:16px;background:transparent;color:rgba(241,238,232,.75);border-color:rgba(241,238,232,.3)"></button></div>
+  </div>
+  <p class="cap">This black hole is ray-traced as you watch. Each pixel follows its light back through curved spacetime, so the arc above the shadow is the far side of the glowing disc, bent over the top by gravity.</p>
+</div>
+
+<header id="top">
+  <div class="brand"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="4" fill="currentColor"/><ellipse cx="9" cy="9" rx="8.2" ry="3.2" fill="none" stroke="currentColor" stroke-width="1.3" transform="rotate(-28 9 9)"/></svg>Space Atlas</div>
+  <nav id="tabs" aria-label="Sections">
+    <button data-v="earth" class="act">Launches</button>
+    <button data-v="sats">Satellites</button>
+    <button data-v="launch">Launch view</button>
+    <button data-v="hangar">Rockets</button>
+    <button data-v="moon">Moon</button>
+    <button data-v="solar">Solar system</button>
+    <button data-v="learn">How it works</button>
+  </nav>
+  <button id="themeBtn" aria-pressed="false"></button>
+  <div class="src"><span id="src" class="lamp amber"><span id="srcText">Loading</span></span></div>
+</header>
+
+<!-- LAUNCHES -->
+<section class="view act" id="v-earth">
+  <aside class="left panel scroll">
+    <div class="sec" id="eNext"></div>
+    <div class="sec"><h3>The orbital picture, 2026</h3><div class="statgrid" id="eStatGrid"></div></div>
+    <div class="sec"><div class="lbl">Show on the globe</div>
+      <div class="switches"><button id="lySat" class="on">Satellite shells</button><button id="lyStn" class="on">Space stations</button></div>
+      <p class="note">Shell density is illustrative. The Satellites tab has the real counts.</p></div>
+  </aside>
+  <aside class="right panel">
+    <div class="sec">
+      <div id="eSeg"><button data-f="up" class="on">Upcoming</button><button data-f="past">Recent</button><button data-f="hist">Milestones</button><button data-f="all">All</button></div>
+      <input id="eQ" class="search" placeholder="Search rocket, company, country or site" aria-label="Search launches">
+      <div class="legend"><span class="lamp amber">Upcoming</span><span class="lamp blue">Flown</span><span class="lamp violet">Milestone</span><span id="eCount" class="lbl"></span></div>
+    </div>
+    <div id="eList" class="scroll rows" style="flex:1"></div>
+  </aside>
+  <div id="eCard" class="drawer panel"></div>
+</section>
+
+<!-- SATELLITES -->
+<section class="view" id="v-sats">
+  <aside class="left panel scroll" id="issPanel"></aside>
+  <aside class="right panel">
+    <div class="sec" id="commSec"><h3>Signal paths</h3><p class="note" style="margin-top:2px">Watch data move through space.</p>
+      <div class="switches"><div style="display:flex;gap:4px"><button data-cm="starlink" style="flex:1">Internet over Starlink lasers</button><select id="cmPair" aria-label="Route" class="search" style="width:auto;padding:4px"></select></div>
+      <button data-cm="iss">ISS calling Mission Control</button><button data-cm="geo">Satellite TV broadcast</button></div></div>
+    <div class="sec"><h3>Who owns the sky</h3><p class="note" style="margin-top:4px">Big constellations in low Earth orbit. Switch them on and off, or pick one for details.</p></div>
+    <div id="satList" class="scroll rows" style="flex:1"></div>
+    <div class="sec"><p class="note" style="margin-top:0" id="satSrcNote">Saved counts: J. McDowell’s satellite catalog (Oct 26 2026), Orbital Radar (Nov 2026), company announcements. Dots are drawn at each constellation’s real altitudes and inclinations; Starlink shows 1 dot per 4 satellites.</p></div>
+  </aside>
+  <div id="satCard" class="drawer panel"></div>
+</section>
+
+<!-- LAUNCH SIM -->
+<section class="view" id="v-launch">
+  <aside class="left panel scroll" id="lHud">
+    <div class="sec">
+      <div class="lbl">Mission clock</div>
+      <div class="readout amber" id="lClock">T−00:10</div>
+      <div class="grid">
+        <div><div class="lbl">Altitude</div><div class="readout" id="lAlt">0 km</div></div>
+        <div><div class="lbl">Speed</div><div class="readout" id="lSpd">0 km/h</div></div>
+        <div><div class="lbl">Downrange</div><div class="readout" id="lDr">0 km</div></div>
+        <div><div class="lbl">Acceleration</div><div class="readout" id="lG">1.0 g</div></div>
+      </div>
+      <div id="lStage" class="lamp go">On the pad</div>
+      <div class="bar"><i id="lBar"></i></div>
+      <p class="note">Simulated ascent based on a typical flight profile. This is not live telemetry.</p>
+    </div>
+    <div class="sec" id="lSys"></div>
+    <div class="sec"><div class="lbl">Altitude against distance downrange</div><canvas id="lProf" width="600" height="220"></canvas></div>
+  </aside>
+  <aside class="right panel" id="lInfo">
+    <div class="sec"><div class="lbl" id="lWho"></div><h3 id="lName"></h3><div class="lbl" style="margin-top:4px" id="lPad"></div></div>
+    <div class="sec"><div class="lbl">What’s happening now</div><div id="lNow"></div></div>
+    <div class="lbl" style="padding:10px 14px 4px">Flight events</div>
+    <div id="lLog" class="scroll" style="flex:1"></div>
+  </aside>
+  <div id="lCtl" class="panel">
+    <button id="lRestart" class="go">Restart</button><span class="sep"></span>
+    <button data-w="1">1×</button><button data-w="5">5×</button><button data-w="10" class="on">10×</button><button data-w="25">25×</button><span class="sep"></span>
+    <button data-c="chase" class="on">Chase</button><button data-c="pad">Pad camera</button><button data-c="side">Side</button><button data-c="free">Free look</button><button data-c="cockpit">Cockpit</button><span class="sep"></span>
+    <button id="lSound" aria-pressed="false">Sound off</button><button id="lToHangar">Inspect the rocket</button>
+  </div>
+  <div id="lFlash"></div>
+  <div id="cockpit" aria-label="Cockpit instruments">
+    <div class="win"><div class="strut" style="left:33%"></div><div class="strut" style="left:66%"></div>
+      <div class="hud"><span>MET <b id="ckMet" class="num">T−00:10</b></span><span>DOWNRANGE <b id="ckDr" class="num">0 km</b></span></div></div>
+    <div class="dash">
+      <div class="scr"><div class="sh">ATTITUDE · SPEED m/s · ALT km</div><div class="adiwrap"><div id="ckSpd" class="tape"></div><div id="ckAdi"></div><div id="ckAlt" class="tape"></div></div></div>
+      <div class="scr"><div class="sh" id="ckEngTitle">ENGINES</div><div id="ckEng"></div><div class="sh2" id="ckEngState"></div>
+        <div class="thr"><div class="thrbar"><i id="ckThrBar"></i></div><div><b id="ckThr" class="num">0%</b><br><span class="dim">THROTTLE</span></div></div></div>
+      <div class="scr"><div class="sh">PROPELLANT</div><div id="ckProp"></div><div class="sh" style="margin-top:8px">ACCELERATION</div>
+        <div class="gm"><div class="gbar"><i id="ckGfill"></i></div><b id="ckG" class="num">1.0 g</b></div></div>
+      <div class="scr"><div class="sh">EVENTS</div><div id="ckAnn" class="annGrid"></div>
+        <div class="sh" style="margin-top:8px">COMMS</div><div id="ckCom1" class="cv">Launch control</div><div id="ckCom2" class="dim"></div>
+        <div style="display:flex;align-items:flex-end;gap:8px;margin-top:4px"><span id="ckBars" class="bars"></span><span id="ckRate" class="num dim"></span></div></div>
+    </div>
+  </div>
+  <div id="lBig"></div>
+  <div id="lToast" class="panel"></div>
+</section>
+
+<!-- HANGAR -->
+<section class="view" id="v-hangar">
+  <aside class="left panel"><div class="sec"><h3>Rocket hangar</h3><p class="note" style="margin-top:2px">Heights are to scale with each other.</p></div><div class="scroll rows" id="hRows" style="flex:1"></div></aside>
+  <aside class="right panel scroll" id="hSpec"></aside>
+  <div id="hCtl" class="panel"><button id="hParts" class="on">Part labels</button><button id="hXray">See inside</button><button id="hExplode">Separate the stages</button><button id="hLineup">Line them all up</button><button id="hFly" class="go">Launch it</button></div>
+</section>
+
+<!-- MOON -->
+<section class="view" id="v-moon">
+  <aside class="left panel scroll" id="mFacts">
+    <div class="sec"><h3>Twelve people have walked on the Moon</h3>
+      <p style="margin-top:8px;font-size:12.5px">All of them on Apollo 11 to 17, between 1969 and 1972. Nobody went back for 54 years, until Artemis II flew four astronauts around the Moon in April 2026: 695,081 miles in 9 days, 1 hour and 32 minutes.</p>
+      <p style="margin-top:8px;font-size:12.5px">Artemis III (late 2027) will practise docking with the new landers in Earth orbit. The first Artemis landing is now Artemis IV, planned for 2028.</p></div>
+    <div class="sec"><div class="legend" style="margin-top:0;flex-direction:column;gap:6px"><span class="lamp amber">Crewed landing</span><span class="lamp blue">Robotic lander</span><span class="lamp red">Upcoming target</span></div></div>
+  </aside>
+  <aside class="right panel"><div class="sec"><h3>Soft landings</h3><p class="note" style="margin-top:2px">Pick one to fly there. Far-side sites sit behind the Moon.</p></div><div class="scroll rows" id="mList" style="flex:1"></div></aside>
+  <div id="mCard" class="drawer panel"></div>
+</section>
+
+<!-- SOLAR -->
+<section class="view" id="v-solar">
+  <aside class="left panel scroll" id="sOdo">
+    <div class="sec"><div class="lbl">Voyager 1, distance from Earth</div>
+      <div class="readout small" id="sV1">—</div><div class="lbl" style="margin-top:4px" id="sV1b"></div>
+      <p style="margin-top:8px;font-size:12.5px">Launched in 1977. On November 18, 2026 it became the first spacecraft one light-day from Earth, so a radio signal now takes over 24 hours each way.</p>
+      <p class="note">Distances use a square-root scale so the outer planets fit on screen. Positions are approximate.</p></div>
+  </aside>
+  <aside class="right panel"><div class="sec"><h3>Planets and spacecraft</h3></div><div class="scroll rows" id="sList" style="flex:1"></div></aside>
+  <div id="sCard" class="drawer panel"></div>
+</section>
+
+<!-- LEARN -->
+<div id="learn"><div id="learnBg"></div><div class="box panel scroll">
+  <button class="x" id="learnX">Close</button>
+  <h2>How getting to orbit works</h2>
+  <div class="phys">
+    <div><b>7.8 km/s</b><span>speed needed to stay in low orbit, about 28,000 km/h</span></div>
+    <div><b>11.2 km/s</b><span>escape velocity from Earth’s surface</span></div>
+    <div><b>~100 km</b><span>the Kármán line, a common definition of where space starts</span></div>
+    <div><b>~90%</b><span>of a rocket’s liftoff mass is propellant</span></div>
+  </div>
+  <p class="intro">Getting to orbit is mostly about going sideways very fast. A rocket climbs straight up to get out of the thick lower atmosphere, then tips over in what’s called the gravity turn and spends most of its fuel building horizontal speed. Once it moves sideways fast enough, it keeps falling around Earth instead of back onto it. The rocket equation, Δv = Isp · g₀ · ln(m₀/m_f), shows why rockets use stages: throwing away empty tanks makes what’s left far more efficient.</p>
+  <div class="cols" id="gloss"></div>
+</div></div>
+<div id="tip"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
+<script>
+__JS__
+</script>
+</body>
+</html>
