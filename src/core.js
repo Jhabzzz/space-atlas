@@ -86,7 +86,11 @@ const LIVE_SITE='https://space-atlas-blond.vercel.app';
 async function loadData(){ let got=null;
   try{ const j=await getJSON('/api/launches',20000); if(fresh(j.up)) got={up:j.up.filter(x=>isFinite(x.lat)),past:(j.past||[]).filter(x=>isFinite(x.lat)),at:j.fetchedAt}; }catch(e){}
   if(!got){ try{ const [u,p]=await Promise.all([tryFetch(API_UP),tryFetch(API_PAST)]); got={up:u,past:p,at:new Date().toISOString()}; }catch(e){} }
-  if(got){ DATA.up=got.up; DATA.past=got.past; LIVE.launches=got.at; }
+  if(got){ // a launch that has already flown can linger in the source's "upcoming" list for a few hours: show it under Recent
+    const done=l=>/^(Success|Failure|Partial Failure)$/i.test(l.status)||/^(Success|Failure|Partial)/i.test(l.status||'');
+    const flown=got.up.filter(done), seen=new Set(got.past.map(l=>l.mission+l.net));
+    got.up=got.up.filter(l=>!done(l)); got.past=flown.filter(l=>!seen.has(l.mission+l.net)).concat(got.past).sort((a,b)=>Date.parse(b.net)-Date.parse(a.net));
+    DATA.up=got.up; DATA.past=got.past; LIVE.launches=got.at; }
   else if(!LIVE.launches){ DATA.up=UPCOMING; DATA.past=PAST; }
   DATA.up.forEach(l=>l.kind='up'); DATA.past.forEach(l=>l.kind='past'); renderSource(); }
 function ago(iso){ const m=Math.round((Date.now()-Date.parse(iso))/6e4); return m<1?'just now': m<60? m+' min ago' : Math.round(m/60)+' h ago'; }

@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/launches",
+      "schedule": "7 11 * * *"
+    },
+    {
+      "path": "/api/iss",
+      "schedule": "9 11 * * *"
+    },
+    {
+      "path": "/api/sats",
+      "schedule": "11 11 * * *"
+    }
+  ]
+}
