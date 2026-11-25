@@ -6,6 +6,7 @@ async function count(g){ const r=await fetch(`https://celestrak.org/NORAD/elemen
 export default async function handler(req,res){
   const keys=Object.keys(GROUPS); const vals=await Promise.all(keys.map(k=>count(GROUPS[k]).catch(()=>null)));
   const counts={}; keys.forEach((k,i)=>counts[k]=vals[i]);
-  res.setHeader('Cache-Control','public, s-maxage=21600, stale-while-revalidate=43200');
-  res.status(200).json({ source:'CelesTrak', fetchedAt:new Date().toISOString(), counts });
+  const ok=counts.active||counts.starlink;
+  res.setHeader('Cache-Control', ok? 'public, s-maxage=21600, stale-while-revalidate=86400' : 'no-store');
+  res.status(ok?200:503).json({ source:'CelesTrak', fetchedAt:new Date().toISOString(), counts });
 }

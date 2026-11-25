@@ -11,8 +11,10 @@ async function crew(){ const r=await fetch('https://ll.thespacedevs.com/2.3.0/sp
   return { expedition: ex.map(e=>e.name).join(', '), people }; }
 export default async function handler(req,res){
   const [t,c]=await Promise.allSettled([tle(),crew()]);
-  res.setHeader('Cache-Control','public, s-maxage=3600, stale-while-revalidate=7200');
-  res.status(t.status==='fulfilled'||c.status==='fulfilled'?200:502).json({ fetchedAt:new Date().toISOString(),
+  const ok=t.status==='fulfilled';
+  // Cache only a response that has the orbit; a failure is never cached, so the CDN keeps the last good copy.
+  res.setHeader('Cache-Control', ok? 'public, s-maxage=1800, stale-while-revalidate=86400' : 'no-store');
+  res.status(ok?200:503).json({ fetchedAt:new Date().toISOString(),
     tle: t.status==='fulfilled'? t.value : null, tleError: t.status==='rejected'? String(t.reason) : undefined,
     crew: c.status==='fulfilled' && c.value.people.length? c.value : null, crewError: c.status==='rejected'? String(c.reason)+(c.reason?.cause?' ('+String(c.reason.cause)+')':'') : undefined });
 }

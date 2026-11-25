@@ -18,6 +18,23 @@ VIEWS.earth = (()=>{
     for(let lat=-60;lat<=60;lat+=30){ const pts=[]; for(let lon=-180;lon<=180;lon+=4) pts.push(ll2v(lat,lon,R*1.0005)); globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),m)); }
     for(let lon=-180;lon<180;lon+=30){ const pts=[]; for(let lat=-90;lat<=90;lat+=4) pts.push(ll2v(lat,lon,R*1.0005)); globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),m)); } }
 
+  // ---- place names: countries (Natural Earth borders), oceans, and the latitude/longitude grid ----
+  const geoLayer=new THREE.Group(), gridLayer=new THREE.Group(); globe.add(geoLayer); globe.add(gridLayer);
+  const at=(lat,lon,r=R*1.002,grp=geoLayer)=>{ const o=new THREE.Object3D(); o.position.copy(ll2v(lat,lon,r)); grp.add(o); return o; };
+  const geoItems=[];
+  GEO.list.filter(c=>c.area>=15000).forEach(c=>{ const tier=c.area>1.5e6?0: c.area>3e5?1: c.area>6e4?2:3;
+    const it=labels.add(c.name, at(c.lat,c.lon), {cls:'geo t'+tier, hideBehind:true, prio:c.area}); it.tier=tier; it.geo=true; geoItems.push(it); });
+  [['Pacific Ocean',5,-150],['Pacific Ocean',-25,-120],['Pacific Ocean',25,165],['Atlantic Ocean',28,-42],['Atlantic Ocean',-22,-15],
+   ['Indian Ocean',-22,78],['Southern Ocean',-62,40],['Southern Ocean',-62,-120],['Arctic Ocean',82,-30]].forEach(([n,la,lo])=>{
+    const it=labels.add(n, at(la,lo), {cls:'geo ocean', hideBehind:true, prio:2e7}); it.tier=0; it.geo=true; geoItems.push(it); });
+  const fmtGridLat=v=>v===0?'Equator 0°':Math.abs(v)+'° '+(v>0?'N':'S'), fmtGridLon=v=>(v===0?'0° Greenwich':v===180||v===-180?'180°':Math.abs(v)+'° '+(v>0?'E':'W'));
+  const latAnchors=[-60,-30,0,30,60].map(la=>{ const o=new THREE.Object3D(); gridLayer.add(o); const it=labels.add(fmtGridLat(la),o,{cls:'grid',hideBehind:true,prio:5e7}); it.gridLat=la; return {o,la,it}; });
+  const lonAnchors=[]; for(let lo=-150;lo<=180;lo+=30){ const o=new THREE.Object3D(); gridLayer.add(o); const it=labels.add(fmtGridLon(lo),o,{cls:'grid',hideBehind:true,prio:5e7}); lonAnchors.push({o,lo,it}); }
+  // keep grid labels on the lines nearest the middle of the view
+  function placeGrid(){ const c=v2ll(camera.position.clone().applyMatrix4(new THREE.Matrix4().copy(globe.matrixWorld).invert()));
+    const lo0=Math.round((c.lon-15)/30)*30+15, la0=Math.max(-45,Math.min(45,Math.round((c.lat-15)/30)*30+15));
+    latAnchors.forEach(a=>a.o.position.copy(ll2v(a.la,lo0,R*1.003))); lonAnchors.forEach(a=>a.o.position.copy(ll2v(la0,a.lo,R*1.003))); return c; }
+
   // ---- satellite shells ----
   const satLayer=new THREE.Group(); scene.add(satLayer);
   function shell(n, altKm, incls, color, size, planes){ const r=R+altKm/6371; const pos=new Float32Array(n*3); const meta=[];
@@ -106,7 +123,7 @@ VIEWS.earth = (()=>{
     const card=$('eCard'); card.style.display='block';
     card.innerHTML=`<button class="x" id="eX">Close</button><div class="lbl">${l.provider}</div><h2 style="margin-top:2px">${l.mission}</h2>
       <div class="meta">${l.rocket}${rocketKey(l.rocket)!=='generic'?`, ${rk.height} m tall`:''}</div>
-      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;align-items:center">${lampOf(s)}<span class="meta" style="margin:0">${when(l)}</span><span class="meta" style="margin:0">${flag(l.cc)}${l.pad}, ${l.site}</span>${l.orbit&&l.orbit!=='N/A'?`<span class="meta" style="margin:0">Target orbit ${l.orbit}</span>`:''}</div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;align-items:center">${lampOf(s)}<span class="meta" style="margin:0">${when(l)}</span><span class="meta" style="margin:0">${flag(l.cc)}${l.pad}, ${l.site}</span><span class="meta mono" style="margin:0">${fmtLL(l.lat,l.lon)}</span>${l.orbit&&l.orbit!=='N/A'?`<span class="meta" style="margin:0">Target orbit ${l.orbit}</span>`:''}</div>
       ${l.desc?`<div class="desc">${l.desc}</div>`:''}
       <div class="acts"><button class="go" id="eWatch">Watch the launch</button><button id="eInspect">Inspect the ${rk.name}</button></div>`;
     $('eX').onclick=()=>{ card.style.display='none'; selected=null; trajLine.clear(); controls.autoRotate=true; renderList(); };
@@ -114,14 +131,25 @@ VIEWS.earth = (()=>{
 
   const ray=new THREE.Raycaster();
   renderer.domElement.addEventListener('mousemove',e=>{ if(current!=='earth') return; ray.setFromCamera(pointer(e),camera); const h=ray.intersectObjects(pickables)[0];
-    if(h){ const s=h.object.userData.site; showTip(e,`<b>${s.site}</b><br><span style="color:var(--dim)">${s.items.length} launch${s.items.length>1?'es':''} in this view</span>`); renderer.domElement.style.cursor='pointer'; } else { hideTip(); renderer.domElement.style.cursor=''; } });
+    if(h){ const s=h.object.userData.site; const pl=GEO.placeAt(s.lat,s.lon);
+      showTip(e,`<b>${s.site}</b><br>${fmtLL(s.lat,s.lon)}${pl.water?'':' · '+pl.name.replace(/^Coast of /,'')}<br><span style="color:var(--dim)">${s.items.length} launch${s.items.length>1?'es':''} in this view</span>`); renderer.domElement.style.cursor='pointer'; } else { hideTip(); renderer.domElement.style.cursor=''; }
+    const g=ray.intersectObject(globe.children[0])[0];
+    if(g){ const ll=v2ll(globe.worldToLocal(g.point.clone())); hoverLL=ll; const now=performance.now(); if(now-lastHover>60){ lastHover=now; setReadout('Pointer',ll.lat,ll.lon); } }
+    else if(hoverLL){ hoverLL=null; geoAcc=1; } });
+  renderer.domElement.addEventListener('mouseleave',()=>{ hoverLL=null; geoAcc=1; });
+  let lastHover=0;
   renderer.domElement.addEventListener('click',e=>{ if(current!=='earth') return; ray.setFromCamera(pointer(e),camera); const h=ray.intersectObjects(pickables)[0];
     if(h){ const s=h.object.userData.site; select(s.items[0]); } });
   controls.addEventListener('start',()=>{ fly=null; });
   $('lySat').onclick=e=>{ satLayer.visible=!satLayer.visible; e.target.classList.toggle('on',satLayer.visible); };
   $('lyStn').onclick=e=>{ stations.visible=!stations.visible; e.target.classList.toggle('on',stations.visible); };
+  $('lyGeo').onclick=e=>{ geoLayer.visible=!geoLayer.visible; e.target.classList.toggle('on',geoLayer.visible); };
+  $('lyGrid').onclick=e=>{ gridLayer.visible=!gridLayer.visible; e.target.classList.toggle('on',gridLayer.visible); };
 
-  let acc=0,time=0;
+  let acc=0,time=0,geoAcc=1,hoverLL=null;
+  const readout=$('eCoord');
+  function setReadout(label,lat,lon){ if(!readout) return; const p=GEO.placeAt(lat,lon);
+    readout.innerHTML=`<span class="k">${label}</span><span class="ll">${fmtLL(lat,lon)}</span><span class="pl ${p.water?'w':''}">${p.water?'Over the '+p.name:p.name}</span>`; }
   return { scene,camera,labels,
     init(){ refresh(); renderNext(); }, reload(){ refresh(); renderNext(); }, renderStats,
     show(){ controls.enabled=true; },
@@ -133,6 +161,9 @@ VIEWS.earth = (()=>{
       pickables.forEach(s=>{ const k=s.userData.base*(1+.25*Math.sin(time*3+s.position.x*10)); s.scale.set(k,k,1); });
       const d=camera.position.length(); ringAnchors.forEach((o,i)=>{ labels.items.find(it=>it.obj===o).visible = satLayer.visible && (i===0? d<5 : d>4); });
       labels.items.filter(i=>i.isPad).forEach(i=>i.visible=d<4.2);
+      const maxD=[9,3.4,2.4,1.7]; geoItems.forEach(it=>it.visible=geoLayer.visible&&d<maxD[it.tier]);
+      latAnchors.concat(lonAnchors).forEach(a=>a.it.visible=gridLayer.visible&&d<6);
+      const c=placeGrid(); geoAcc+=dt; if(geoAcc>.25){ geoAcc=0; if(!hoverLL) setReadout('View centre',c.lat,c.lon); }
       controls.update();
       acc+=dt; if(acc>1){ acc=0; document.querySelectorAll('#eList [data-cd]').forEach(el=>{ const l=list[+el.dataset.cd]; el.textContent=fmtCd(new Date(l.net)-Date.now()); }); const n=nextLaunch(), c=$('eNextCd'); if(n&&c) c.textContent=fmtCd(new Date(n.net)-Date.now()); }
     }, nextLaunch };

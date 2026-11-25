@@ -1,0 +1,17 @@
+# Requests the live data endpoints every 10 minutes so the CDN always holds a fresh copy,
+# even when nobody has visited the site for a while.
+name: Keep live data warm
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request each feed
+        run: |
+          for p in api/launches api/iss api/sats; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "https://space-atlas-blond.vercel.app/$p")
+            echo "$p -> $code"
+          done

@@ -85,6 +85,19 @@ input.search{width:100%;font:inherit;font-size:13px;padding:7px 9px;background:v
 
 /* ---------- scene labels (over 3D) ---------- */
 #labels{position:fixed;inset:0;pointer-events:none;z-index:4;overflow:hidden}
+.tag.geo{transform:translate(-50%,-50%);pointer-events:none;cursor:default;color:#a9bdd3;font-size:10px;letter-spacing:.02em;opacity:.92}
+.tag.geo.t0{font-size:12.5px;font-weight:700;color:#d3dfec;letter-spacing:.06em}
+.tag.geo.t1{font-size:11px;font-weight:700;color:#c3d2e2}
+.tag.geo.ocean{font-style:italic;font-weight:400;font-size:12px;color:#79a6d9;letter-spacing:.12em}
+.tag.grid{transform:translate(4px,-110%);pointer-events:none;cursor:default;font-family:'B612 Mono',monospace;font-size:9.5px;color:#8aa3c2;opacity:.85}
+#eCoord{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;gap:10px;align-items:baseline;padding:6px 12px;border-radius:6px;background:rgba(10,22,38,.78);border:1px solid rgba(143,169,201,.25);color:#dbe6f2;font-size:12px;pointer-events:none;z-index:5;white-space:nowrap}
+#eCoord .k{color:#8aa3c2;font-size:11px}
+#eCoord .ll{font-family:'B612 Mono',monospace}
+#eCoord .pl{font-weight:700}
+#eCoord .pl.w{color:#8fc0f0;font-weight:400;font-style:italic}
+#eCoord:empty{display:none}
+.view:not(.act) #eCoord{display:none}
+.meta.mono{font-family:'B612 Mono',monospace}
 .tag{position:absolute;transform:translate(-50%,-140%);font-size:11px;white-space:nowrap;color:var(--scene-text);text-shadow:0 0 3px #0a1626,0 0 3px #0a1626,0 1px 2px #000;pointer-events:auto;cursor:pointer}
 .tag.small{font-size:10.5px;color:#c4d2e2}
 .tag.big{font-size:13px;font-weight:700}
@@ -271,7 +284,7 @@ svg.eng .e.on{fill:#ffb347;stroke:#fff0c8;filter:drop-shadow(0 0 .06px #ff8a1a)}
     <div class="sec" id="eNext"></div>
     <div class="sec"><h3>The orbital picture, 2026</h3><div class="statgrid" id="eStatGrid"></div></div>
     <div class="sec"><div class="lbl">Show on the globe</div>
-      <div class="switches"><button id="lySat" class="on">Satellite shells</button><button id="lyStn" class="on">Space stations</button></div>
+      <div class="switches"><button id="lySat" class="on">Satellite shells</button><button id="lyStn" class="on">Space stations</button><button id="lyGeo" class="on">Place names</button><button id="lyGrid" class="on">Latitude and longitude</button></div>
       <p class="note">Shell density is illustrative. The Satellites tab has the real counts.</p></div>
   </aside>
   <aside class="right panel">
@@ -282,6 +295,7 @@ svg.eng .e.on{fill:#ffb347;stroke:#fff0c8;filter:drop-shadow(0 0 .06px #ff8a1a)}
     </div>
     <div id="eList" class="scroll rows" style="flex:1"></div>
   </aside>
+  <div id="eCoord" aria-live="off"></div>
   <div id="eCard" class="drawer panel"></div>
 </section>
 

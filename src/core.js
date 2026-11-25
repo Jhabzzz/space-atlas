@@ -52,15 +52,24 @@ function atmosphere(radius, color=[.35,.6,1], power=3, strength=1){ return new T
 const labelLayer = $('labels');
 class Labels { constructor(){ this.items=[]; }
   add(text, obj, opts={}){ const el=document.createElement('div'); el.className='tag '+(opts.cls||''); el.innerHTML=text; labelLayer.appendChild(el);
-    const it={el,obj,off:opts.off||new THREE.Vector3(),onClick:opts.onClick,hideBehind:opts.hideBehind,center:opts.center}; if(opts.onClick) el.addEventListener('click',e=>{e.stopPropagation();opts.onClick();}); el.style.display='none'; this.items.push(it); return it; }
+    const it={el,obj,off:opts.off||new THREE.Vector3(),onClick:opts.onClick,hideBehind:opts.hideBehind,center:opts.center,prio:opts.prio==null?1e9:opts.prio}; if(opts.onClick) el.addEventListener('click',e=>{e.stopPropagation();opts.onClick();}); el.style.display='none'; this.items.push(it); return it; }
   clear(){ this.items.forEach(i=>i.el.remove()); this.items=[]; }
   hide(){ this.items.forEach(i=>i.el.style.display='none'); }
-  update(camera){ const v=new THREE.Vector3(), cp=camera.position;
+  update(camera){ const v=new THREE.Vector3(), cp=camera.position, shown=[];
     for(const it of this.items){ if(it.obj.visible===false||(it.visible===false)){ it.el.style.display='none'; continue; }
       it.obj.getWorldPosition(v); v.add(it.off);
       if(it.hideBehind){ const c=it.center||new THREE.Vector3(); const n=v.clone().sub(c).normalize(); const toCam=cp.clone().sub(v).normalize(); if(n.dot(toCam)<0.05){ it.el.style.display='none'; continue; } }
       v.project(camera); if(v.z>1||v.z<-1){ it.el.style.display='none'; continue; }
-      it.el.style.display='block'; it.el.style.left=((v.x+1)/2*innerWidth)+'px'; it.el.style.top=((1-v.y)/2*innerHeight)+'px'; } } }
+      it.sx=(v.x+1)/2*innerWidth; it.sy=(1-v.y)/2*innerHeight; it.show=true; shown.push(it); }
+    // Declutter: higher-priority labels win; a label that would overlap one already placed is hidden.
+    shown.sort((a,b)=>b.prio-a.prio); const placed=[];
+    for(const it of shown){ if(it.el.style.display==='none'){ it.el.style.display='block'; }
+      it.el.style.left=it.sx+'px'; it.el.style.top=it.sy+'px';
+      if(it.w==null||it.wText!==it.el.textContent){ it.w=it.el.offsetWidth||40; it.h=it.el.offsetHeight||14; it.wText=it.el.textContent; }
+      if(it.prio>=1e9){ placed.push([it.sx-it.w/2,it.sy-it.h*1.4,it.w,it.h]); continue; }
+      const r=[it.sx-it.w/2-3,it.sy-it.h/2-2,it.w+6,it.h+4];
+      if(placed.some(q=>r[0]<q[0]+q[2]&&r[0]+r[2]>q[0]&&r[1]<q[1]+q[3]&&r[1]+r[3]>q[1])){ it.el.style.display='none'; continue; }
+      placed.push(r); } } }
 
 // --------- data loading ---------
 function fromApi(r){ const p=r.pad||{}, loc=p.location||{}; const parts=(r.name||'').split(' | ');
@@ -72,15 +81,17 @@ let DATA={up:[],past:[],hist:HISTORIC.map(h=>Object.assign({},h,{kind:'hist'}))}
 // Launch data: our own API (on the deployed site) → Launch Library 2 directly → saved snapshot, in that order.
 const LIVE={launches:null, iss:null, sats:null};
 async function getJSON(url,ms=8000){ const ctl=new AbortController(); const tm=setTimeout(()=>ctl.abort(),ms); try{ const r=await fetch(url,{signal:ctl.signal,cache:'no-store'}); if(!r.ok) throw new Error(r.status); return await r.json(); } finally{ clearTimeout(tm); } }
-const fresh=l=>Array.isArray(l)&&l.length&&l.every(x=>isFinite(x.lat));
+const fresh=l=>Array.isArray(l)&&l.some(x=>isFinite(x.lat));
+const LIVE_SITE='https://space-atlas-blond.vercel.app';
 async function loadData(){ let got=null;
-  try{ const j=await getJSON('/api/launches'); if(fresh(j.up)) got={up:j.up,past:j.past,at:j.fetchedAt}; }catch(e){}
+  try{ const j=await getJSON('/api/launches',20000); if(fresh(j.up)) got={up:j.up.filter(x=>isFinite(x.lat)),past:(j.past||[]).filter(x=>isFinite(x.lat)),at:j.fetchedAt}; }catch(e){}
   if(!got){ try{ const [u,p]=await Promise.all([tryFetch(API_UP),tryFetch(API_PAST)]); got={up:u,past:p,at:new Date().toISOString()}; }catch(e){} }
-  if(got){ DATA.up=got.up; DATA.past=got.past; LIVE.launches=got.at; } else { DATA.up=UPCOMING; DATA.past=PAST; LIVE.launches=null; }
+  if(got){ DATA.up=got.up; DATA.past=got.past; LIVE.launches=got.at; }
+  else if(!LIVE.launches){ DATA.up=UPCOMING; DATA.past=PAST; }
   DATA.up.forEach(l=>l.kind='up'); DATA.past.forEach(l=>l.kind='past'); renderSource(); }
 function ago(iso){ const m=Math.round((Date.now()-Date.parse(iso))/6e4); return m<1?'just now': m<60? m+' min ago' : Math.round(m/60)+' h ago'; }
 function renderSource(){ const s=$('src'), live=!!LIVE.launches; s.className='lamp '+(live?'go':'amber');
-  $('srcText').textContent = live? 'Live, updated '+ago(LIVE.launches) : 'Saved data from '+new Date(SNAPSHOT_DATE).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  $('srcText').textContent = live? 'Live, updated '+ago(LIVE.launches) : 'Saved data from '+new Date(SNAPSHOT_DATE).toLocaleDateString(undefined,{month:'short',day:'numeric'})+', retrying';
   s.title = live? 'Launch data from The Space Devs Launch Library 2, refreshed every 10 minutes.' : 'Live data could not be reached from here, so this shows launch data saved on Nov 22, 2026.'; }
 
 // --------- view switching ---------

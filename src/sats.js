@@ -5,7 +5,7 @@ function initIssTle(l1,l2){ try{ if(typeof satellite==='undefined') return false
 initIssTle(ISS_TLE[0],ISS_TLE[1]);
 let ISS_CREW_LIVE=null;
 async function fetchIssTle(){
-  try{ const j=await getJSON('/api/iss'); if(j.tle&&initIssTle(j.tle[0],j.tle[1])){ ISS_TLE_LIVE=true; } if(j.crew) ISS_CREW_LIVE={...j.crew,at:j.fetchedAt}; LIVE.iss=j.fetchedAt; }catch(e){}
+  try{ const j=await getJSON('/api/iss',15000); if(j.tle&&initIssTle(j.tle[0],j.tle[1])){ ISS_TLE_LIVE=true; } if(j.crew) ISS_CREW_LIVE={...j.crew,at:j.fetchedAt}; LIVE.iss=j.fetchedAt; }catch(e){}
   if(!ISS_TLE_LIVE){ try{ const ctl=new AbortController(); setTimeout(()=>ctl.abort(),6000);
     const r=await fetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle',{signal:ctl.signal}); if(!r.ok) throw 0;
     const lines=(await r.text()).trim().split(/\r?\n/).map(s=>s.trim()); const l1=lines.find(s=>s.startsWith('1 ')), l2=lines.find(s=>s.startsWith('2 '));
@@ -252,7 +252,7 @@ VIEWS.sats = (()=>{
           $('issAlt').textContent=state.h.toFixed(1)+' km'; $('issSpd').textContent=Math.round(state.speed*3600).toLocaleString()+' km/h';
           const u=p.clone(), sdot=u.dot(sd.v); const shadow = sdot<0 && u.clone().sub(sd.v.clone().multiplyScalar(sdot)).length()<1;
           const S=$('issSun'); S.className='lamp '+(shadow?'':'amber'); S.textContent= shadow?'In Earth’s shadow (orbital night)':'In sunlight';
-          const O=$('issOver'); const land=overLand(state.lat,state.lon); O.className='lamp '+(land?'go':'blue'); O.textContent= land?'Over land':'Over ocean';
+          const O=$('issOver'); const pl=GEO.placeAt(state.lat,state.lon); O.className='lamp '+(pl.water?'blue':'go'); O.textContent= pl.water?'Over the '+pl.name : 'Over '+pl.name.replace(/^Coast of /,'the coast of ');
           const revEpoch=+ISS_TLE[1].slice(63,68); const revs=revEpoch+Math.floor((simTime-ISS_EPOCH)/(864e5/15.4955));
           $('issRev').textContent=`Orbit number ${revs.toLocaleString()} since launch in 1998`;
           const km=visCircle(state.lat,state.lon,state.h); $('issVisNote').textContent=`Anyone within about ${Math.round(km).toLocaleString()} km of the point below it can see the station above 10° elevation, when the sky is dark and the ISS is sunlit.`;
