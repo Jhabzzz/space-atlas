@@ -92,7 +92,7 @@ async function loadData(){ let got=null;
 function ago(iso){ const m=Math.round((Date.now()-Date.parse(iso))/6e4); return m<1?'just now': m<60? m+' min ago' : Math.round(m/60)+' h ago'; }
 function renderSource(){ const s=$('src'), live=!!LIVE.launches; s.className='lamp '+(live?'go':'amber');
   $('srcText').textContent = live? 'Live, updated '+ago(LIVE.launches) : 'Saved data from '+new Date(SNAPSHOT_DATE).toLocaleDateString(undefined,{month:'short',day:'numeric'})+', retrying';
-  s.title = live? 'Launch data from The Space Devs Launch Library 2, refreshed every 10 minutes.' : 'Live data could not be reached from here, so this shows launch data saved on Nov 22, 2026.'; }
+  s.title = live? 'Launch data from The Space Devs Launch Library 2, refreshed every 10 minutes.' : 'Live data could not be reached from here, so this shows launch data saved on '+new Date(SNAPSHOT_DATE).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+'.'; }
 
 // --------- view switching ---------
 function show(name, arg){

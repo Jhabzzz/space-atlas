@@ -1,0 +1,38 @@
+# Once a day, save the current live launch data into data/snapshot.json and rebuild index.html.
+# The snapshot is what the site falls back to if live data can't be reached, so this keeps
+# the fallback no more than a day old. The commit also triggers a fresh Vercel deploy.
+name: Daily launch data snapshot
+on:
+  schedule:
+    - cron: '17 11 * * *'   # 11:17 UTC = 6:17 AM New York (EST)
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch live launches
+        run: |
+          set -e
+          curl -sf --max-time 60 https://space-atlas-blond.vercel.app/api/launches -o /tmp/live.json
+          python3 - <<'PY'
+          import json, sys
+          j = json.load(open('/tmp/live.json'))
+          up, past = j.get('up') or [], j.get('past') or []
+          if len(up) < 5:
+              sys.exit('Live data looks incomplete, keeping the old snapshot')
+          json.dump({'up': up, 'past': past, 'savedAt': j['fetchedAt']}, open('data/snapshot.json', 'w'))
+          print(f"Saved {len(up)} upcoming and {len(past)} recent launches from {j['source']}")
+          PY
+      - name: Rebuild page
+        run: python3 build.py
+      - name: Commit if anything changed
+        run: |
+          git config user.name "Jhabzzz"
+          git config user.email "196982011+Jhabzzz@users.noreply.github.com"
+          git add data/snapshot.json index.html
+          if git diff --cached --quiet; then echo "No changes today"; exit 0; fi
+          git commit -m "Daily launch data snapshot $(date -u +%Y-%m-%d)"
+          git push

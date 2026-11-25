@@ -1,9 +1,9 @@
 // ================= DATA =================
-const SNAPSHOT_DATE = '2026-11-22T23:40:00-05:00';
+const SNAPSHOT_DATE = '__SNAP_DATE__';
 const API_UP = 'https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=60&mode=normal';
 const API_PAST = 'https://ll.thespacedevs.com/2.3.0/launches/previous/?limit=40&mode=normal';
 
-// Upcoming + recent launches (Launch Library 2 snapshot, Nov 22 2026)
+// Upcoming + recent launches: Launch Library 2 snapshot, refreshed daily by a GitHub Action (see .github/workflows/daily-snapshot.yml)
 const UPCOMING = __SNAP_UP__;
 const PAST = __SNAP_PAST__;
 
